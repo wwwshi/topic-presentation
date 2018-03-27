@@ -1,0 +1,93 @@
+---
+title: "Example 4"
+author: "Wei Shi"
+date: "03/29/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, 
+                      fig.width = 5, fig.height = 5, dpi = 300,
+                      out.width = "90%", fig.align = "center")
+
+library(harrypotter)
+library(tidytext)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(tibble)
+
+options(tibble.print_max = 10, tibble.print_min = 10)
+```
+
+## Tokenizing by bigrams
+
+```{r}
+titles <- c("Philosopher's Stone", "Chamber of Secrets", "Prisoner of Azkaban",
+            "Goblet of Fire", "Order of the Phoenix", "Half-Blood Prince",
+            "Deathly Hallows")
+
+books <- list(philosophers_stone, chamber_of_secrets, prisoner_of_azkaban,
+           goblet_of_fire, order_of_the_phoenix, half_blood_prince,
+           deathly_hallows)
+  
+series <- data_frame()
+
+for(i in seq_along(titles)) {
+        
+        clean <- data_frame(chapter = seq_along(books[[i]]),
+                        text = books[[i]]) %>%
+             unnest_tokens(bigram, text, token = "ngrams", n = 2) %>%
+             mutate(book = titles[i]) %>%
+             select(book, everything())
+
+        series <- rbind(series, clean)
+}
+
+# set factor to keep books in order of publication
+series$book <- factor(series$book, levels = titles)
+
+series
+
+series %>%
+        count(bigram, sort = TRUE)
+
+series %>%
+        separate(bigram, c("word1", "word2"), sep = " ") %>%
+        filter(!word1 %in% stop_words$word,
+               !word2 %in% stop_words$word) %>%
+        count(word1, word2, sort = TRUE)
+```
+
+## Sentiment Analysis
+
+Example: "I'm not happy and I do not like it!"
+
+```{r}
+series %>%
+        separate(bigram, c("word1", "word2"), sep = " ") %>%
+        filter(word1 == "not") %>%
+        count(book, word1, word2, sort = TRUE)
+
+AFINN <- get_sentiments("afinn")
+
+nots <- series %>%
+               separate(bigram, c("word1", "word2"), sep = " ") %>%
+               filter(word1 == "not") %>%
+               inner_join(AFINN, by = c(word2 = "word")) %>%
+               count(word2, score, sort = TRUE) 
+
+nots
+
+nots %>%
+        mutate(contribution = n * score) %>%
+        arrange(desc(abs(contribution))) %>%
+        head(20) %>%
+        ggplot(aes(reorder(word2, contribution), n * score, fill = n * score > 0)) +
+        geom_bar(stat = "identity", show.legend = FALSE) +
+        xlab("Words preceded by 'not'") +
+        ylab("Sentiment score * # of occurrances") +
+        coord_flip()
+```
+
+

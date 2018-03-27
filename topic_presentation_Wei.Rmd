@@ -1,0 +1,290 @@
+---
+title: "Text Mining using Tidytext"
+author: "Wei Shi"
+date: "03/29/2018"
+output:
+  ioslides_presentation: default
+  beamer_presentation: default
+  slidy_presentation: default
+editor_options: 
+  chunk_output_type: console
+---
+
+<style>
+pre {
+  overflow-x: auto;
+}
+pre code {
+  word-wrap: normal;
+  white-space: pre;
+}
+</style>
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+pkgs <- c("dplyr", "tidytext", "ggplot2", "reshape2",
+          "wordcloud", "tidyr", "RColorBrewer")
+for (i in 1:length(pkgs)){
+    if (! pkgs[i] %in% installed.packages()){
+        install.packages(pkgs[i], dependencies = TRUE,
+                         repos = "https://cloud.r-project.org")
+    }
+}
+
+if (packageVersion("devtools") < 1.6) {
+  install.packages("devtools")
+}
+devtools::install_github("bradleyboehmke/harrypotter")
+
+
+library(tibble)
+options(tibble.print_max = 6, tibble.print_min = 6)
+```
+
+## The tidy text format
+
+Tidy text format: **a table with one-token-per-row**
+
+Token: a meaningful unit of text that we are interested in using for analysis, such as a word (most commonly used), n-gram, sentence, paragraph
+
+Tidy data sets allow manipulation with a standard set of "tidy" tools, such as `dplyr`, `tidyr`, `ggplot2`, and `broom`
+ 
+Easily convert to and from non-tidy format objects from popular text mining R packages such as `tm` and `quanteda`
+
+## Contrasting tidy text with other data structures
+Tidy text format is a table with **one-token-per-row**. Other ways text is often stored in text mining approaches:
+
+- **String**: character vectors, and often text data is first read into memory in this form
+- **Corpus**: These types of objects typically contain raw strings annotated with additional metadata and details
+- **Document-term matrix**: This is a sparse matrix describing a collection of documents with one row for each document and one column for each term. The value in the matrix is typically word count or tf-idf
+
+## Converting text to a tidy format
+
+Let us use the data provided in `harrypotter` [package](https://github.com/bradleyboehmke/harrypotter)
+
+For instance, the following illustrates the raw text of the first two chapters of the philosophers_stone:
+
+```{r}
+library(harrypotter)
+philosophers_stone[1:2]
+```
+
+## Converting text to a tidy format
+
+In order to turn it into a tidy text dataset, we first need to put it into a data frame.
+
+```{r}
+library(dplyr)
+text_df <- data_frame(chapter = seq_along(philosophers_stone), 
+                      text = philosophers_stone)
+text_df
+```
+
+## Converting text to a tidy format | [unnest_tokens()](https://www.rdocumentation.org/packages/tidytext/versions/0.1.6/topics/unnest_tokens)
+
+```{r}
+library(tidytext)
+text_df %>% unnest_tokens(word, text)
+```
+
+- strips all punctuation
+
+## Word Frequency
+
+The simplest word frequency analysis is assessing the most common words in text. We can use count() from `dplyr` to assess the most common words in philosophers_stone:
+
+```{r}
+text_df %>% 
+        unnest_tokens(word, text) %>% 
+        count(word, sort = TRUE)
+```
+
+- A lot of the most common words are not very informative
+
+## Word Frequency
+
+We can remove the stop words with anti_join() and the built-in stop_words data set provided by `tidytext`.
+
+```{r}
+text_df %>% 
+        unnest_tokens(word, text) %>%
+        anti_join(stop_words) %>%
+        count(word, sort = TRUE)
+```
+
+## Word Frequency
+
+We can visualise top 5 most common words with ggplot()
+
+```{r fig.height=2}
+library(ggplot2)
+text_df %>% 
+        unnest_tokens(word, text) %>%
+        anti_join(stop_words) %>%
+        count(word, sort = TRUE) %>%
+        top_n(5) %>%
+        mutate(word = reorder(word, n)) %>%
+        ggplot(aes(word, n)) + geom_col() + xlab(NULL) + coord_flip()
+```
+
+## Similarity of Word Frequencies
+
+[Example 1](example1.html)
+
+## Analyzing word and document frequency: tf-idf
+
+Understand the importance that words provide within and across documents
+
+- **term frequency(tf)**: how frequently a word occurs in a document
+
+stop words: it is possible that some of these words might be more important in some documents than others
+
+- **inverse document frequency (idf)**:
+
+$idf(\text{term}) = \ln (n_\text{documents} / n_\text{documents containing term})$
+
+**tf-idf**: measure how important a word is to a document in a collection of documents
+
+## Analyzing word and document frequency: tf-idf
+| [bind_tf_idf()](https://www.rdocumentation.org/packages/tidytext/versions/0.1.6/topics/bind_tf_idf)
+
+```{r include=FALSE}
+titles <- c("Philosopher's Stone", "Chamber of Secrets", "Prisoner of Azkaban",
+            "Goblet of Fire", "Order of the Phoenix", "Half-Blood Prince",
+            "Deathly Hallows")
+
+books <- list(philosophers_stone, chamber_of_secrets, prisoner_of_azkaban,
+           goblet_of_fire, order_of_the_phoenix, half_blood_prince,
+           deathly_hallows)
+  
+series <- data_frame()
+
+for(i in seq_along(titles)) {
+        
+        clean <- data_frame(chapter = seq_along(books[[i]]),
+                        text = books[[i]]) %>%
+             unnest_tokens(word, text) %>%
+             mutate(book = titles[i]) %>%
+             select(book, everything())
+
+        series <- rbind(series, clean)
+}
+
+# set factor to keep books in order of publication
+series$book <- factor(series$book, levels = titles)
+```
+
+```{r}
+book_words <- series %>%
+                     count(book, word, sort = TRUE) %>%
+                     ungroup()
+book_words %>%
+           bind_tf_idf(word, book, n)
+```
+
+## Analyzing word and document frequency: tf-idf
+
+We can look at the words that have the highest tf-idf values.
+
+```{r}
+book_words %>%
+           bind_tf_idf(word, book, n) %>%
+           arrange(desc(tf_idf))
+```
+
+## Sentiment Analysis
+
+Let's try to understand the opinion or emotion in the text. One way is to consider the text as a combination of its individual words and the sentiment content of the whole text as the sum of the sentiment content of the individual words. 
+
+`tidytext` provides several sentiment lexicons in **sentiments**
+
+```{r}
+sentiments
+```
+
+## Sentiment Analysis
+
+The three general-purpose lexicons are
+
+- **AFINN** from [Finn Årup Nielsen](http://www2.imm.dtu.dk/pubdb/views/publication_details.php?id=6010)
+
+  assigns words with a score that runs between -5 and 5
+  
+- **bing** from [Bing Liu and collaborators](https://www.cs.uic.edu/~liub/FBS/sentiment-analysis.html)
+
+ categorizes words in a binary fashion into positive and negative categories
+
+- **nrc** from [Saif Mohammad and Peter Turney](http://saifmohammad.com/WebPages/NRC-Emotion-Lexicon.htm)
+
+categorizes words in a binary fashion into categories of positive, negative, anger, anticipation, disgust, fear, joy, sadness, surprise, and trust
+
+## Sentiment Analysis
+
+<div class="columns-2">
+```{r}
+get_sentiments("afinn")
+get_sentiments("bing")
+get_sentiments("nrc")
+```
+</div>
+
+## Sentiment Analysis 
+
+```{r}
+nrcjoy <- get_sentiments("nrc") %>% 
+          filter(sentiment == "joy")
+
+series %>% 
+       inner_join(nrcjoy) %>%
+       count(word, sort = TRUE)
+```
+
+## How sentiment changes throughout each novel? | [Example 2](example2.html)
+
+- Create an index that breaks up each book by 500 words, which is the approximate number of words on every two pages so this will allow us to assess changes in sentiment even within chapters
+- Join the **bing** lexicon with inner_join to assess the positive vs. negative sentiment of each word
+- Count up how many positive and negative words there are for every two pages
+- Use spread() from `tidyr` so that we have negative and positive sentiment in separate columns
+- calculate a net sentiment (positive - negative)
+- plot our data
+
+## Word Clouds
+
+[Example3](example3.html)
+
+## Looking at units beyond words | n-grams
+
+n-gram: consecutive sequences of words
+
+- n = 2, bigrams, pairs of two adjacent words
+- unnest_tokens(token = "ngrams", n = 2)
+
+[Example 4](example4.html)
+
+## Convert to and from non-tidy formats
+
+### Convert to non-tidy formats
+
+- **cast_sparse()**: convert to a sparse matrix from `Matrix`
+- **cast_dtm()**: convert to a DocumentTermMatrix object from `tm`
+- **cast_dfm()**: convert to a dfm object from `quanteda`
+
+### Convert from non-tidy formats
+
+- **tidy()**:  convert from DocumentTermMatrix, dfm, Corpus objects to tidy text format
+
+## Reference and Resources
+
+[Text Mining with R: A Tidy Approach](https://www.tidytextmining.com/)
+
+[UC Business Analytics R Programming Guide: Word Relationships](http://uc-r.github.io/word_relationships)
+
+[CRAN Task View for Natural Language Processing](https://cran.r-project.org/web/views/NaturalLanguageProcessing.html)
+
+[Text Visualization Browser](http://textvis.lnu.se/)
+
+[A Cool Example for Text Visualization](https://www.nytimes.com/interactive/2017/11/07/upshot/modern-love-what-we-write-when-we-write-about-love.html)
+
+
+

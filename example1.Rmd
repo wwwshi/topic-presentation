@@ -1,0 +1,107 @@
+---
+title: "Example 1"
+author: "Wei Shi"
+date: "03/29/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE,
+                      fig.width = 6, fig.height = 4, dpi = 300,
+                      out.width = "90%", fig.align = "center")
+
+library(harrypotter)
+library(tidytext)
+library(dplyr)
+library(ggplot2)
+library(tibble)
+library(RColorBrewer)
+library(gridExtra)
+
+options(tibble.print_max = 10, tibble.print_min = 10)
+```
+
+## Tidying all seven novels
+
+```{r}
+titles <- c("Philosopher's Stone", "Chamber of Secrets", "Prisoner of Azkaban",
+            "Goblet of Fire", "Order of the Phoenix", "Half-Blood Prince",
+            "Deathly Hallows")
+
+books <- list(philosophers_stone, chamber_of_secrets, prisoner_of_azkaban,
+           goblet_of_fire, order_of_the_phoenix, half_blood_prince,
+           deathly_hallows)
+  
+series <- data_frame()
+
+for(i in seq_along(titles)) {
+        
+        clean <- data_frame(chapter = seq_along(books[[i]]),
+                        text = books[[i]]) %>%
+             unnest_tokens(word, text) %>%
+             mutate(book = titles[i]) %>%
+             select(book, everything())
+
+        series <- rbind(series, clean)
+}
+
+# set factor to keep books in order of publication
+series$book <- factor(series$book, levels = titles)
+
+series
+```
+
+## Word Frequency
+```{r}
+# top 10 most common words in each book
+top10 <- series %>%
+                anti_join(stop_words) %>%
+                group_by(book) %>%
+                count(word, sort = TRUE) %>%
+                top_n(10) %>%
+                ungroup()
+
+top10
+
+#Visualization
+p <- vector("list", 7)
+for (i in seq_along(titles)){
+  p[[i]] <- top10 %>%
+        subset(book == titles[i]) %>%
+        ggplot(aes(reorder(word, n), n)) +
+          geom_bar(stat = "identity", fill = brewer.pal(7, "Set3")[i]) +
+          labs(title = titles[i], x = NULL, y = NULL) +
+          coord_flip() +
+          theme(legend.position="none", plot.title = element_text(size = 9))
+}
+grid.arrange(p[[1]], p[[2]], p[[3]], p[[4]], p[[5]], p[[6]], p[[7]], ncol = 3)
+
+```
+
+## Similarity of Word Frequencies
+
+```{r}
+# calculate percent of word use across all novels
+potter_pct <- series %>%
+        anti_join(stop_words) %>%
+        count(word) %>%
+        transmute(word, all_words = n / sum(n))
+
+# calculate percent of word use within each novel
+frequency <- series %>%
+        anti_join(stop_words) %>%
+        count(book, word) %>%
+        mutate(book_words = n / sum(n)) %>%
+        left_join(potter_pct) %>%
+        arrange(desc(book_words)) %>%
+        ungroup()
+
+frequency
+
+#Correlation Test
+frequency %>%
+        group_by(book) %>%
+        summarize(correlation = cor(book_words, all_words),
+                  p_value = cor.test(book_words, all_words)$p.value)
+```
+
