@@ -1,2 +1,2 @@
-# Topic presentation for STAT6494 Data Science in Action
+# Topic Presentation for STAT6494 Data Science in Action
 
