@@ -1,2 +1,2 @@
-# topic-presentation
-Topic Presentation for STAT 6494
+# Topic presentation for STAT6494 Data Science in Action
+
